@@ -29,26 +29,22 @@ def clean_and_structure_text(pages_text, remove_hf=True):
     # 1. 헤더/푸터 자동 제거
     if remove_hf:
         hf_counter = Counter()
-        # 숫자/특수문자를 제거한 정규화 함수 (페이지 번호 변동 대응)
         normalize = lambda s: re.sub(r'[\d\s.,;:!?\'"()\[\]{}\-]', '', s).strip()
 
         for page in pages_text:
             lines = [l.strip() for l in page.split('\n') if l.strip()]
             if len(lines) < 6:
                 continue
-            # 상단 3줄 / 하단 3줄 추출
             top = lines[:3]
             bottom = lines[-3:]
             for line in top + bottom:
                 norm = normalize(line)
-                if len(norm) >= 2:  # 의미 없는 짧은 문자열 제외
+                if len(norm) >= 2:
                     hf_counter[norm] += 1
 
-        # 40% 이상 페이지에서 반복되면 헤더/푸터로 판단
         threshold = max(2, len(pages_text) * 0.4)
         remove_norms = {n for n, c in hf_counter.items() if c >= threshold}
 
-        # 실제 원문에서 제거
         cleaned_pages = []
         for page in pages_text:
             lines = page.split('\n')
@@ -59,17 +55,11 @@ def clean_and_structure_text(pages_text, remove_hf=True):
 
     # 2. 전체 텍스트 합치기 및 문장 재구성
     full_text = "\n\n".join(cleaned_pages)
-
-    # 하이픈 개행 병합 (exam-\nple -> example)
     full_text = re.sub(r'-\s*\n\s*', '', full_text)
-    # 단일 개행 → 공백, 이중 개행 → 문단 구분 유지
     full_text = re.sub(r'(?<!\n)\n(?!\n)', ' ', full_text)
-    # 다중 공백/탭 정리
     full_text = re.sub(r'[ \t]{2,}', ' ', full_text)
-    # 문단 사이 과다 개행 정리
     full_text = re.sub(r'\n{3,}', '\n\n', full_text)
 
-    # 3. 문단 정제 (공백만 있는 줄 제거)
     paragraphs = [p.strip() for p in full_text.split('\n\n') if p.strip()]
     return '\n\n'.join(paragraphs)
 
@@ -90,17 +80,15 @@ if uploaded_file is not None:
 
                 images = convert_from_path(temp_pdf, dpi=200)
                 for i, img in enumerate(images):
-                    # kor+eng 언어팩 필요. 미설치 시 eng만 적용됨
                     txt = pytesseract.image_to_string(img, lang="kor+eng")
                     pages_text.append(txt)
-                    st.progress((i + 1) / len(images), text=f"페이지 {i+1}/{len(images)} 처리 중...")
+                    st.progress((i + 1) / len(images), text="페이지 {}/{} 처리 중...".format(i+1, len(images)))
             else:
                 st.info("⏳ 텍스트 레이어 추출 중...")
                 pdf_reader = PdfReader(uploaded_file)
                 for i, page in enumerate(pdf_reader.pages):
                     pages_text.append(page.extract_text() or "")
 
-            # 후처리 적용
             final_text = clean_and_structure_text(pages_text, remove_hf=clean_option)
 
             if not final_text.strip():
@@ -110,9 +98,10 @@ if uploaded_file is not None:
             else:
                 with open(save_path, "w", encoding="utf-8") as f:
                     f.write(final_text)
-                st.success(f"✅ 변환 완료: `{save_path}`")
+                st.success("✅ 변환 완료: " + save_path)
 
-                st.text_area("미리보기", final_text[:2000] + ("..." if len(final_text) > 2000 else ""), height=250)
+                preview = final_text[:2000] + ("..." if len(final_text) > 2000 else "")
+                st.text_area("미리보기", preview, height=250)
                 st.download_button(
                     label="📥 TXT 파일 다운로드",
                     data=final_text.encode("utf-8"),
@@ -127,4 +116,7 @@ if uploaded_file is not None:
             elif "poppler" in err:
                 st.error("❌ Poppler가 설치되지 않았습니다.")
             else:
-                st.error(f"
+                st.error("❌ 오류 발생: " + str(e))
+        finally:
+            if temp_pdf and os.path.exists(temp_pdf):
+                os.remove(temp_pdf)
